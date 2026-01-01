@@ -169,7 +169,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   return (
     <div 
-      className="relative flex flex-col h-full w-full overflow-hidden bg-gradient-to-br from-slate-900 via-teal-900 to-slate-900 text-white justify-center items-center"
+      className="relative flex flex-col min-h-screen w-full overflow-hidden bg-gradient-to-br from-slate-900 via-teal-900 to-slate-900 text-white justify-center items-center"
       style={{ fontFamily: "'Vazirmatn', sans-serif" }}
     >
       <style>{authStyles}</style>

@@ -51,7 +51,7 @@ const App: React.FC = () => {
   if (view === 'loading') {
     return (
       <div 
-        className="h-screen w-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-teal-900 to-slate-900 text-white" 
+        className="fixed inset-0 w-full h-[100dvh] flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-teal-900 to-slate-900 text-white" 
         style={{ fontFamily: "'Vazirmatn', sans-serif" }}
       >
         <div className="relative mb-6">
@@ -86,14 +86,14 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="h-screen w-full max-w-md mx-auto bg-white shadow-2xl relative overflow-hidden flex flex-col"
+      className="fixed inset-0 w-full h-[100dvh] sm:static sm:h-screen sm:max-w-md sm:mx-auto bg-white shadow-2xl overflow-hidden relative"
       style={{ fontFamily: "'Vazirmatn', sans-serif" }}
     >
       {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden relative z-0 flex flex-col">
+      <div className="absolute top-0 left-0 right-0 bottom-[70px] overflow-hidden z-0 flex flex-col">
         {/* Chat is kept mounted (display: none) to persist background generation */}
         {user && (
-            <div className={`flex-1 w-full h-full flex flex-col ${view === 'chat' ? 'flex' : 'hidden'}`}>
+            <div className={`w-full h-full flex flex-col ${view === 'chat' ? 'flex' : 'hidden'}`}>
                 <Chat user={user} />
             </div>
         )}
@@ -116,7 +116,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="bg-white border-t border-slate-100 px-4 py-2 flex justify-around items-center pb-safe z-50 relative shadow-[0_-5px_15px_rgba(0,0,0,0.02)] h-[70px]">
+      <div className="absolute bottom-0 w-full bg-white border-t border-slate-100 px-4 py-2 flex justify-around items-center pb-safe z-50 shadow-[0_-5px_15px_rgba(0,0,0,0.02)] h-[70px]">
           
           <button 
             onClick={() => setView('profile')}
