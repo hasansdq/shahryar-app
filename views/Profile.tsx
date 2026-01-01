@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { User } from '../types';
 import { storageService } from '../services/storageService';
 import { 
@@ -43,32 +42,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdateUser }
 
       setIsAnalyzing(true);
       try {
-        const apiKey = process.env.API_KEY;
-        const ai = new GoogleGenAI({ apiKey });
-
-        const prompt = `
-          Analyze the following messages sent by a user to an AI city assistant (Shahryar).
-          Identify 4 to 6 specific personality traits, interests, or communication styles of this user.
-          
-          User Messages:
-          "${userMessages.slice(0, 5000)}"
-
-          Output Rules:
-          1. Return ONLY a JSON array of strings.
-          2. The strings must be in Persian (Farsi).
-          3. Be concise (1-3 words per trait).
-          4. Example: ["کنجکاو", "علاقمند به پسته", "لحن رسمی"]
-        `;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
-          }
+        const response = await fetch('/api/profile/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: userMessages })
         });
-
-        const newTraits = JSON.parse(response.text || "[]");
+        
+        if (!response.ok) throw new Error("API Error");
+        
+        const newTraits = await response.json();
 
         if (Array.isArray(newTraits) && newTraits.length > 0) {
            // Compare strictly to avoid unnecessary updates/renders

@@ -1,6 +1,4 @@
-
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { User, ChatMessage, ChatSession, Attachment } from '../types';
 import { storageService } from '../services/storageService';
 import { 
@@ -13,22 +11,6 @@ import ReactMarkdown from 'react-markdown';
 interface ChatProps {
   user: User;
 }
-
-// --- Tool Definition ---
-const vectorSearchTool: FunctionDeclaration = {
-  name: 'search_knowledge_base',
-  parameters: {
-    type: Type.OBJECT,
-    description: 'Search for specific information about Rafsanjan, its history, news, or specialized local knowledge.',
-    properties: {
-      query: {
-        type: Type.STRING,
-        description: 'The search query.',
-      },
-    },
-    required: ['query'],
-  },
-};
 
 // --- Styles for Animations ---
 const animationStyles = `
@@ -60,15 +42,6 @@ const animationStyles = `
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 `;
 
-// --- Local Knowledge Base Mock ---
-const getLocalKnowledge = (query: string) => {
-    // This simulates a database search completely on the client side
-    return `اطلاعات یافت شده در پایگاه داده داخلی برای "${query}":
-    رفسنجان یکی از شهرهای مهم استان کرمان و مرکز پسته ایران است.
-    مکان‌های دیدنی شامل: خانه حاج آقا علی (بزرگترین خانه خشتی جهان)، دره راگه، و بازار قدیم.
-    پسته رفسنجان شهرت جهانی دارد و ارقام اکبری، کله‌قوچی و احمدآقایی معروف‌ترین آنها هستند.`;
-};
-
 export const Chat: React.FC<ChatProps> = ({ user }) => {
   // --- State ---
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -90,44 +63,37 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
   useEffect(() => {
     const loadData = async () => {
         const loadedSessions = await storageService.getSessions(user.id);
-        setSessions(loadedSessions);
-        if (loadedSessions.length > 0) {
-          setCurrentSession(loadedSessions[0]);
+        const latestSession = loadedSessions[0];
+        if (!latestSession || latestSession.messages.length > 0) {
+            try {
+                const newSession = await storageService.createSession(user.id);
+                setSessions([newSession, ...loadedSessions]);
+                setCurrentSession(newSession);
+            } catch (e) {
+                console.error("Error creating initial session", e);
+                setSessions(loadedSessions);
+                if (loadedSessions.length > 0) setCurrentSession(loadedSessions[0]);
+            }
         } else {
-          try {
-             const newSession = await storageService.createSession(user.id);
-             setSessions([newSession]);
-             setCurrentSession(newSession);
-          } catch (e) {
-             console.error("Error creating initial session", e);
-          }
+            setSessions(loadedSessions);
+            setCurrentSession(latestSession);
         }
     };
     loadData();
   }, [user.id]);
 
-  // Updated Auto-Resize Logic for Textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       if (input === '') {
-          // Reset to default height
           textarea.style.height = '52px';
           textarea.style.overflowY = 'hidden';
       } else {
-          // Reset to auto to calculate scrollHeight correctly
           textarea.style.height = 'auto'; 
-          
-          // Max height 150px
           const MAX_HEIGHT = 150;
           const DEFAULT_HEIGHT = 52;
-          
           const newHeight = Math.min(textarea.scrollHeight, MAX_HEIGHT);
-          
-          // Ensure it doesn't shrink below default height (52px)
           textarea.style.height = `${Math.max(newHeight, DEFAULT_HEIGHT)}px`;
-          
-          // Only show scrollbar if content exceeds max height
           textarea.style.overflowY = textarea.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
       }
     }
@@ -156,7 +122,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
   };
 
   // --- Handlers ---
-
   const createNewSession = async () => {
     const newSession = await storageService.createSession(user.id);
     setSessions(prev => [newSession, ...prev]);
@@ -197,10 +162,8 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
     const textToSend = input.trim();
     const attachmentToSend = attachment;
 
-    // Validation
     if ((!textToSend && !attachmentToSend) || loading) return;
 
-    // Reset Input Immediately for better UX
     setInput('');
     setAttachment(null);
     if (textareaRef.current) {
@@ -209,21 +172,15 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
     }
 
     let activeSession = currentSession;
-    
-    // Ensure Session Exists
     if (!activeSession) {
          try {
              const newSession = await storageService.createSession(user.id);
              setSessions(prev => [newSession, ...prev]);
              setCurrentSession(newSession);
              activeSession = newSession;
-         } catch (e) {
-             console.error("Failed to create session", e);
-             return; 
-         }
+         } catch (e) { console.error(e); return; }
     }
 
-    // Construct User Message
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -240,7 +197,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
       title: activeSession.messages.length === 0 ? textToSend.slice(0, 30) : activeSession.title
     };
 
-    // Construct Model Placeholder
     const modelMsgId = (Date.now() + 1).toString();
     const modelPlaceholder: ChatMessage = {
         id: modelMsgId,
@@ -254,7 +210,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
         messages: [...updatedMessages, modelPlaceholder]
     };
 
-    // Update State & Storage
     setCurrentSession(sessionStreaming);
     await storageService.saveSession(sessionWithUserMsg, user.id); 
     setSessions(prev => [sessionStreaming, ...prev.filter(s => s.id !== sessionStreaming.id)]);
@@ -262,29 +217,10 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
     setLoading(true);
 
     try {
-      const apiKey = process.env.API_KEY || process.env.REACT_APP_API_KEY;
-      if (!apiKey) throw new Error("API Key is missing. Check your .env file.");
-
-      const ai = new GoogleGenAI({ apiKey });
-      const today = new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      
-      // Fetch Tasks for Context Awareness
       const tasks = await storageService.getTasks(user.id);
-      const tasksSummary = tasks.map(t => `- ${t.title} (${t.status}, ${t.date})`).join('\n');
 
-      const systemInstruction = `
-      شما "شهریار" هستید، هوش مصنوعی بومی و هوشمند شهر رفسنجان.
-      تاریخ امروز: ${today} است.
-      دستورالعمل‌های اختصاصی کاربر: ${user.customInstructions || 'ندارد'}
-      برای سوالات تخصصی رفسنجان از ابزار search_knowledge_base استفاده کن.
-      لحن: صمیمی، محترمانه و به زبان فارسی.
-      
-      لیست وظایف و برنامه‌های کاربر در بخش برنامه‌ریزی:
-      ${tasksSummary || 'هیچ وظیفه‌ای ثبت نشده است.'}
-      اگر کاربر درباره برنامه‌هایش پرسید، با توجه به این لیست پاسخ بده.
-      `;
-
-      let currentHistory = updatedMessages.slice(-15).map(msg => {
+      // Prepare History for Server
+      const history = updatedMessages.slice(-15).map(msg => {
         const parts: any[] = [{ text: msg.text }];
         if (msg.attachment) {
           parts.push({
@@ -294,70 +230,29 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
         return { role: msg.role, parts: parts };
       });
 
-      // --- Loop for Function Calling ---
-      let finalResponseText = '';
-      let collectedSources: { title: string; uri: string }[] = [];
+      // Send Request to Backend
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+           history,
+           user,
+           tasks
+        })
+      });
 
-      for (let turn = 0; turn < 3; turn++) {
-          
-          const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: currentHistory,
-              config: {
-                  systemInstruction,
-                  // Fixed: Removed googleSearch to avoid conflict with functionDeclarations
-                  tools: [{ functionDeclarations: [vectorSearchTool] }],
-              }
-          });
-
-          // 1. Handle Function Calls
-          const functionCalls = response.functionCalls;
-          if (functionCalls && functionCalls.length > 0) {
-              setProcessingTool(true);
-              const call = functionCalls[0];
-              
-              if (call.name === 'search_knowledge_base') {
-                  const query = (call.args as any).query;
-                  
-                  // CLIENT-SIDE MOCK EXECUTION
-                  const localResult = getLocalKnowledge(query);
-                  
-                  currentHistory.push({
-                      role: 'model',
-                      parts: [{ functionCall: call }]
-                  });
-                  currentHistory.push({
-                      role: 'user',
-                      parts: [{ functionResponse: { name: call.name, response: { result: localResult } } }]
-                  });
-                  
-                  continue; 
-              }
-          }
-
-          if (response.text) {
-              finalResponseText = response.text;
-          }
-
-          const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-          if (groundingChunks) {
-             const newSources = groundingChunks
-                .filter((c: any) => c.web?.uri && c.web?.title)
-                .map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
-             if (newSources.length > 0) collectedSources = [...collectedSources, ...newSources];
-          }
-
-          break;
+      if (!response.ok) {
+          throw new Error('Server API Error');
       }
-      
-      setProcessingTool(false);
+
+      const data = await response.json();
 
       const finalMsg: ChatMessage = {
           id: modelMsgId,
           role: 'model',
-          text: finalResponseText,
+          text: data.text || "پاسخی دریافت نشد.",
           timestamp: Date.now(),
-          sources: collectedSources.length > 0 ? collectedSources : undefined
+          sources: data.sources
       };
 
       const finalSession = {
@@ -375,7 +270,7 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
       const errorMsg: ChatMessage = {
         id: Date.now().toString(),
         role: 'model',
-        text: `خطا: ${error.message || "مشکلی پیش آمد."}`,
+        text: `خطا در ارتباط با سرور: ${error.message}`,
         timestamp: Date.now()
       };
       
@@ -389,8 +284,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
       setProcessingTool(false);
     }
   };
-
-  // --- Rendering Helpers ---
 
   return (
     <div className="flex h-full bg-slate-50 relative overflow-hidden">
@@ -545,7 +438,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
           </button>
         )}
 
-        {/* Refactored Standard Input Area - Professional & Modern & Non-Scrollable by Default */}
         <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-8px_30px_-15px_rgba(0,0,0,0.08)] z-20">
            {attachment && (
              <div className="mb-3 mx-1 bg-teal-50 border border-teal-100 rounded-2xl p-2.5 flex justify-between items-center animate-message">
@@ -567,7 +459,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
           <div className="flex items-end gap-2 relative">
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" onChange={handleFileSelect}/>
             
-            {/* Attachment Button */}
             <button 
                 onClick={() => fileInputRef.current?.click()} 
                 className={`w-[52px] h-[52px] rounded-full flex-shrink-0 flex items-center justify-center transition-all duration-300 border ${attachment ? 'bg-teal-100 text-teal-600 border-teal-200' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100 hover:text-slate-600'}`}
@@ -575,7 +466,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
               <Paperclip className="w-5 h-5 transform rotate-45" />
             </button>
             
-            {/* Input Wrapper */}
             <div className="flex-1 bg-slate-100 rounded-[26px] border border-transparent focus-within:border-teal-500/30 focus-within:bg-white focus-within:shadow-md focus-within:shadow-teal-500/5 transition-all duration-300 min-h-[52px] flex items-center relative">
                 <textarea 
                     ref={textareaRef} 
@@ -590,7 +480,6 @@ export const Chat: React.FC<ChatProps> = ({ user }) => {
                 />
             </div>
             
-            {/* Send Button */}
             <button 
                 onClick={handleSend} 
                 disabled={(!input.trim() && !attachment) || loading} 

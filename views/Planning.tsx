@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Task, TaskCategory } from '../types';
 import { storageService } from '../services/storageService';
-import { GoogleGenAI } from '@google/genai';
 import { 
   Plus, MoreHorizontal, Calendar as CalendarIcon, Trash2, 
   CheckCircle2, Circle, Clock, Sparkles, X, Edit3, GripVertical, Loader2, List
@@ -135,38 +133,20 @@ export const Planning: React.FC<PlanningProps> = ({ user }) => {
     setAiLoading(true);
 
     try {
-      const apiKey = process.env.API_KEY || process.env.REACT_APP_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
-
-      const ai = new GoogleGenAI({ apiKey });
       const now = new Date().toLocaleDateString('fa-IR');
       
-      const prompt = `
-        You are a smart task planning assistant.
-        Current Date (Jalali): ${now}
-        Available Categories: ${JSON.stringify(categories.map(c => ({ id: c.id, name: c.title })))}
-        
-        User Request: "${aiPrompt}"
-
-        Task: Convert the user's request into a JSON array of tasks.
-        Rules:
-        1. 'date' must be a valid Jalali date string (e.g., 1403/02/15). Calculate based on "tomorrow", "next week", etc. relative to ${now}.
-        2. 'categoryId' must match one of the available category IDs. If unsure, use the first one.
-        3. Output MUST be a valid JSON array. No markdown.
-        
-        Format:
-        [
-          { "title": "...", "description": "...", "date": "...", "categoryId": "..." }
-        ]
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: 'application/json' }
+      const response = await fetch('/api/planning/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+              prompt: aiPrompt,
+              categories: categories.map(c => ({ id: c.id, name: c.title }))
+          })
       });
 
-      const generatedTasks = JSON.parse(response.text || '[]');
+      if(!response.ok) throw new Error("API Error");
+
+      const generatedTasks = await response.json();
       
       if (Array.isArray(generatedTasks)) {
         const newTasks: Task[] = [];

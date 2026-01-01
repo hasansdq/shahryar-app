@@ -1,8 +1,6 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { User, Task } from '../types';
 import { storageService } from '../services/storageService';
-import { GoogleGenAI } from '@google/genai';
 import { 
   MessageSquare, Mic, Calendar, User as UserIcon, 
   Sparkles, Zap, ArrowLeft, Bell, Loader2, Plus, X, Lightbulb
@@ -72,7 +70,7 @@ export const Home: React.FC<HomeProps> = ({ user, onChangeView }) => {
       else if (hour < 18) setGreeting('عصر بخیر');
       else setGreeting('شب بخیر');
 
-      // 3. Generate AI Content (Daily Suggestion & Did You Know)
+      // 3. Generate AI Content
       generateDailyContent();
     };
     initHome();
@@ -81,24 +79,27 @@ export const Home: React.FC<HomeProps> = ({ user, onChangeView }) => {
   const generateDailyContent = async () => {
     setLoadingDaily(true);
     try {
-        const apiKey = process.env.API_KEY || process.env.REACT_APP_API_KEY;
-        const ai = new GoogleGenAI({ apiKey });
         const context = await getUserContext();
 
-        // Parallel requests for better performance
+        // Parallel requests to our API
         const [suggestionRes, factRes] = await Promise.all([
-            ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: `Based on these user tasks: [${context.tasks}] and chats: [${context.chats}], give a very short (max 15 words) friendly Persian suggestion for today. Don't mention "tasks" directly, just give the advice.`,
+            fetch('/api/home/content', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...context, type: 'suggestion' })
             }),
-            ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: `Tell me one interesting short fact about Rafsanjan city (history, pistachio, culture, etc) in Persian. Max 20 words.`,
+            fetch('/api/home/content', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...context, type: 'fact' })
             })
         ]);
 
-        setDailySuggestion(suggestionRes.text || 'امروز روز خوبی برای پیشرفت است.');
-        setDidYouKnow(factRes.text || 'رفسنجان بزرگترین تولیدکننده پسته در جهان است.');
+        const suggestionData = await suggestionRes.json();
+        const factData = await factRes.json();
+
+        setDailySuggestion(suggestionData.text || 'امروز روز خوبی برای پیشرفت است.');
+        setDidYouKnow(factData.text || 'رفسنجان بزرگترین تولیدکننده پسته در جهان است.');
 
     } catch (e) {
         console.error(e);
@@ -113,16 +114,15 @@ export const Home: React.FC<HomeProps> = ({ user, onChangeView }) => {
     setShowNotifModal(true);
     setNotifLoading(true);
     try {
-        const apiKey = process.env.API_KEY || process.env.REACT_APP_API_KEY;
-        const ai = new GoogleGenAI({ apiKey });
         const context = await getUserContext();
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: `Act as a personal assistant named Shahryar. Based on the user's pending tasks: [${context.tasks}] and recent interests: [${context.chats}], generate a personalized, urgent, or motivating notification/tip (max 2 sentences) in Persian. It should feel like a real-time insight.`,
+        const response = await fetch('/api/home/content', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...context, type: 'notification' })
         });
+        const data = await response.json();
         
-        setNotifContent(response.text || 'یادآوری: زمانی را برای استراحت و مرور برنامه‌های خود اختصاص دهید.');
+        setNotifContent(data.text || 'یادآوری: زمانی را برای استراحت و مرور برنامه‌های خود اختصاص دهید.');
     } catch (e) {
         setNotifContent('ارتباط با هوش مصنوعی برقرار نشد. لطفا اینترنت خود را بررسی کنید.');
     } finally {
@@ -134,24 +134,17 @@ export const Home: React.FC<HomeProps> = ({ user, onChangeView }) => {
     if (!smartTaskInput.trim()) return;
     setSmartTaskLoading(true);
     try {
-        const apiKey = process.env.API_KEY || process.env.REACT_APP_API_KEY;
-        const ai = new GoogleGenAI({ apiKey });
         const now = new Date().toLocaleDateString('fa-IR');
-
-        const prompt = `
-            Convert this user input into a task object JSON: "${smartTaskInput}"
-            Current Date: ${now}
-            Format: { "title": "...", "description": "...", "date": "...", "categoryId": "cat_todo" }
-            Date should be Jalali. If category is unclear, use 'cat_todo'.
-        `;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
+        const response = await fetch('/api/home/content', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: smartTaskInput, type: 'smart-task' })
         });
+        
+        if(!response.ok) throw new Error("API Error");
 
-        const taskData = JSON.parse(response.text || '{}');
+        const taskData = await response.json();
+
         if (taskData.title) {
             const newTask: Task = {
                 id: Date.now().toString(),
