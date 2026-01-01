@@ -102,25 +102,28 @@ export const useLiveGemini = (user: User | null) => {
           onmessage: async (msg: LiveServerMessage) => {
             // Handle Tool Calls Locally
             if (msg.toolCall) {
-              for (const fc of msg.toolCall.functionCalls) {
+              const functionCalls = msg.toolCall?.functionCalls ?? [];
+
+              for (const fc of functionCalls) {
                 if (fc.name === 'search_knowledge_base') {
-                    const query = (fc.args as any).query;
-                    console.log("Mocking Vector Store:", query);
-                    
-                    const result = getLocalKnowledge(query);
-                    
-                    // Send Response Back to Model
-                    sessionPromise.then(session => {
-                        session.sendToolResponse({
-                            functionResponses: [{
-                                id: fc.id,
-                                name: fc.name,
-                                response: { result: result }
-                            }]
-                        });
+                  const query = (fc.args as any).query;
+                  console.log("Mocking Vector Store:", query);
+
+                  const result = getLocalKnowledge(query);
+
+                  // Send Response Back to Model
+                  sessionPromise.then(session => {
+                    session.sendToolResponse({
+                      functionResponses: [{
+                        id: fc.id,
+                        name: fc.name,
+                        response: { result }
+                      }]
                     });
+                  });
                 }
               }
+
             }
 
             // Handle Audio Output
