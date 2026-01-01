@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
+import { WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,7 +85,6 @@ const runWithTimeout = (promise) => {
 // --- GEMINI SETUP & TOOLS (Server Side) ---
 const apiKey = process.env.API_KEY || process.env.REACT_APP_API_KEY; 
 // In a real Node env, use process.env.API_KEY. 
-// Assuming the environment running this server has the key.
 
 let ai = null;
 if (apiKey) {
@@ -212,7 +212,8 @@ app.post('/api/chat', async (req, res) => {
           شما "شهریار" هستید، هوش مصنوعی بومی و هوشمند شهر رفسنجان.
           تاریخ امروز: ${today} است.
           دستورالعمل‌های اختصاصی کاربر: ${user.customInstructions || 'ندارد'}
-          برای سوالات تخصصی رفسنجان از ابزار search_knowledge_base استفاده کن.
+          برای دریافت اخبار روز و رویدادها از ابزار جستجو استفاده کن.
+          برای اطلاعات محلی ثابت از ابزار پایگاه دانش استفاده کن.
           لحن: صمیمی، محترمانه و به زبان فارسی.
           لیست وظایف کاربر:
           ${tasksSummary}
@@ -221,6 +222,16 @@ app.post('/api/chat', async (req, res) => {
         let currentHistory = [...history];
         let finalResponseText = '';
         let collectedSources = [];
+        
+        // Detect intent for Web Search (News) vs Local Knowledge
+        const lastUserMsg = currentHistory[currentHistory.length - 1]?.parts?.[0]?.text || "";
+        const isNewsRequest = /خبر|اخبار|news|رویداد|اتفاق/i.test(lastUserMsg);
+
+        // Tool Selection: "Only tools: googleSearch is permitted" rule dictates we don't mix them if possible
+        // We swap tools based on intent to avoid "Server API Error" from mixing incompatible tools
+        const selectedTools = isNewsRequest 
+            ? [{ googleSearch: {} }] 
+            : [{ functionDeclarations: [vectorSearchTool] }];
 
         // Loop for function calling (max 3 turns)
         for (let turn = 0; turn < 3; turn++) {
@@ -230,12 +241,12 @@ app.post('/api/chat', async (req, res) => {
                     contents: currentHistory,
                     config: {
                         systemInstruction,
-                        tools: [{ functionDeclarations: [vectorSearchTool] }],
+                        tools: selectedTools,
                     }
                 })
             );
 
-            // Handle Function Calls
+            // Handle Function Calls (Only for vectorSearchTool)
             const functionCalls = response.functionCalls;
             if (functionCalls && functionCalls.length > 0) {
                 const call = functionCalls[0];
@@ -261,7 +272,7 @@ app.post('/api/chat', async (req, res) => {
                 finalResponseText = response.text;
             }
 
-            // Extract Grounding
+            // Extract Grounding (For Google Search)
             const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
             if (groundingChunks) {
                 const newSources = groundingChunks
@@ -400,6 +411,125 @@ if (fs.existsSync(buildPath)) {
     });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
+
+// --- WEBSOCKET SERVER (Live API Proxy) ---
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', async (ws) => {
+    console.log("WS Connected");
+    
+    let session = null;
+    let isActive = true;
+
+    if (!ai) {
+        ws.send(JSON.stringify({ type: 'error', message: 'AI not configured on server' }));
+        ws.close();
+        return;
+    }
+
+    try {
+        // Setup Gemini Live Session
+        const instruction = `
+            شما "شهریار" هستید، دستیار صوتی رفسنجان.
+            پاسخ‌های شما باید کوتاه، صوتی و با لحن محاوره‌ای باشد.
+            اگر اطلاعات تخصصی نیاز بود، از ابزار استفاده کن.
+        `;
+
+        const sessionPromise = ai.live.connect({
+            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+            config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
+                systemInstruction: instruction,
+                tools: [{ functionDeclarations: [vectorSearchTool] }],
+            },
+            callbacks: {
+                onopen: () => {
+                    console.log("Gemini Live Session Opened");
+                    if(ws.readyState === ws.OPEN) {
+                        ws.send(JSON.stringify({ type: 'connected' }));
+                    }
+                },
+                onmessage: async (msg) => {
+                    if (!isActive) return;
+
+                    // Handle Audio Output
+                    const base64Audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                    if (base64Audio) {
+                         if(ws.readyState === ws.OPEN) {
+                             // Relay audio as JSON
+                             ws.send(JSON.stringify({ type: 'audio', data: base64Audio }));
+                         }
+                    }
+
+                    // Handle Tool Calls (Server Side Execution)
+                    if (msg.toolCall) {
+                        for (const fc of msg.toolCall.functionCalls) {
+                            if (fc.name === 'search_knowledge_base') {
+                                const query = fc.args.query;
+                                console.log("Executing Tool on Server:", query);
+                                const result = getLocalKnowledge(query);
+                                
+                                sessionPromise.then(s => {
+                                    s.sendToolResponse({
+                                        functionResponses: [{
+                                            id: fc.id,
+                                            name: fc.name,
+                                            response: { result: result }
+                                        }]
+                                    });
+                                });
+                            }
+                        }
+                    }
+
+                    if (msg.serverContent?.interrupted) {
+                         if(ws.readyState === ws.OPEN) {
+                             ws.send(JSON.stringify({ type: 'interrupted' }));
+                         }
+                    }
+                },
+                onclose: () => {
+                    console.log("Gemini Live Session Closed");
+                    if(ws.readyState === ws.OPEN) ws.close();
+                },
+                onerror: (err) => {
+                    console.error("Gemini Live Error:", err);
+                    if(ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'error', message: 'Gemini Error' }));
+                }
+            }
+        });
+        
+        session = await sessionPromise;
+
+        // Handle Messages from Client (Browser)
+        ws.on('message', async (message) => {
+            if (!isActive || !session) return;
+            try {
+                const data = JSON.parse(message);
+                
+                if (data.type === 'audio') {
+                    // data.data is base64 PCM from browser
+                    session.sendRealtimeInput({
+                        media: { mimeType: 'audio/pcm;rate=16000', data: data.data }
+                    });
+                }
+            } catch (e) {
+                console.error("WS Message Parse Error", e);
+            }
+        });
+
+        ws.on('close', () => {
+            isActive = false;
+            if (session) session.close();
+        });
+
+    } catch (err) {
+        console.error("WS Setup Error", err);
+        ws.send(JSON.stringify({ type: 'error', message: 'Server Connection Failed' }));
+        ws.close();
+    }
 });
