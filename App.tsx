@@ -116,28 +116,28 @@ const App: React.FC = () => {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="absolute bottom-0 w-full bg-white border-t border-slate-100 px-4 py-2 flex justify-around items-center pb-safe z-50 shadow-[0_-5px_15px_rgba(0,0,0,0.02)] h-[70px]">
+      <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-2 flex justify-between items-center pb-safe z-50 shadow-[0_-5px_15px_rgba(0,0,0,0.02)] h-[70px]">
           
           <button 
             onClick={() => setView('profile')}
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'profile' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
+            className={`flex-1 min-w-0 flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'profile' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
           >
             <UserIcon className="w-6 h-6" />
-            <span className="text-[10px] font-bold">پروفایل</span>
+            <span className="text-[10px] font-bold truncate w-full text-center">پروفایل</span>
           </button>
 
           <button 
             onClick={() => setView('voice')}
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'voice' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
+            className={`flex-1 min-w-0 flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'voice' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
           >
             <Mic className="w-6 h-6" />
-            <span className="text-[10px] font-bold">صوتی</span>
+            <span className="text-[10px] font-bold truncate w-full text-center">صوتی</span>
           </button>
 
           {/* Fixed Home Button: Perfectly Circular */}
           <button 
             onClick={() => setView('home')}
-            className={`flex items-center justify-center rounded-full transition-all duration-300 -mt-8 shadow-lg border-4 border-slate-50 w-16 h-16 flex-shrink-0 ${
+            className={`shrink-0 flex items-center justify-center rounded-full transition-all duration-300 -mt-8 shadow-lg border-4 border-slate-50 w-16 h-16 mx-2 ${
               view === 'home' 
                 ? 'bg-gradient-to-tr from-teal-500 to-emerald-500 text-white scale-110 shadow-teal-500/30' 
                 : 'bg-white text-slate-400 hover:text-teal-500'
@@ -148,18 +148,18 @@ const App: React.FC = () => {
 
           <button 
             onClick={() => setView('chat')}
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'chat' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
+            className={`flex-1 min-w-0 flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'chat' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
           >
             <MessageSquare className="w-6 h-6" />
-            <span className="text-[10px] font-bold">گفتگو</span>
+            <span className="text-[10px] font-bold truncate w-full text-center">گفتگو</span>
           </button>
 
           <button 
             onClick={() => setView('planning')}
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'planning' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
+            className={`flex-1 min-w-0 flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${view === 'planning' ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-50'}`}
           >
             <Calendar className="w-6 h-6" />
-            <span className="text-[10px] font-bold">برنامه</span>
+            <span className="text-[10px] font-bold truncate w-full text-center">برنامه</span>
           </button>
 
         </div>
