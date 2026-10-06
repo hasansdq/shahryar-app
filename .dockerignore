@@ -1,0 +1,84 @@
+# ═══════════════════════════════════════════════════════════════
+# شهریار — .dockerignore
+# هر چیزی که نباید وارد Build Context (و در نتیجه ایمیج) شود
+# ═══════════════════════════════════════════════════════════════
+
+# ─── وابستگی‌ها و خروجی‌های build (داخل ایمیج از نو ساخته می‌شوند) ───
+node_modules
+.next
+.next-prod
+out
+build
+*.tsbuildinfo
+
+# ─── ⛔ داده‌های امنیتی و داده‌های کاربران — هرگز وارد ایمیج نمی‌شوند ───
+# Turbopack فایل‌های ریشه را در خروجی standalone «آینه» می‌کند؛ پس هر
+# چیزی که راز یا داده‌ی کاربر باشد باید همین‌جا بلاک شود.
+#
+# db/: «فقط» schema.sql لازم است (DDL خالص، بدون داده). بقیه حذف:
+#   • env-backup → حاوی JWT_SECRET و SMS_ENC_KEY (راز کامل!)
+#   • storage-backup.tar.gz / *.db → داده‌ی کامل کاربران
+db/*
+!db/schema.sql
+# فایل‌های محیطی با رازها (JWT_SECRET و...)
+.env
+.env.*
+!.env.example
+# رسانه‌های آپلودشده کاربران — فقط از طریق Volume
+storage
+# رسانه‌های legacy و اسکرین‌شات‌های تست — حجیم و حاوی داده‌ی واقعی
+public/uploads
+screenshots
+upload
+# داده‌های ماندگار، اسرار سرور و شبیه‌سازی محلی
+docker-data
+docker-sim
+backups
+secrets
+.z-ai-config
+cookies.txt
+*.log
+
+# ─── گیت و ابزارهای توسعه ───
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+.claude
+.z-ai-config
+
+# ─── فایل‌های غیرضروری برای build ایمیج ───
+skills
+download
+tool-results
+tests
+examples
+docs
+Caddyfile
+bun.lock
+DOCKER-DEPLOY.md
+worklog.md
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+.dockerignore
+agent-ctx
+watchdog.log
+dev.log
+dev.out.log
+server.log
+next-env.d.ts
+
+# ─── اسکریپت‌ها: فقط موارد لازم برای build/run ───
+# ⛔ seed.ts (رمز مدیر hard-code) و اسکریپت‌های تست (حاوی credential)
+#    هرگز وارد Build Context (و ایمیج) نمی‌شوند — Turbopack فایل‌های
+#    ریشه را در standalone آینه می‌کند، پس این فیلتر حیاتی است.
+scripts/*
+!scripts/postbuild.mjs
+!scripts/start.mjs
+!scripts/docker-seed.mjs
+!scripts/docker-backup.mjs
+
+# توجه: db/schema.sql عمداً مستثنی شده — postbuild به آن نیاز دارد
+# (DDL خالص است و هیچ داده‌ای ندارد)

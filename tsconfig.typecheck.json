@@ -1,0 +1,17 @@
+{
+  "//": "پیکربندی typecheck مستقل — جدا از build (next.config.ts → ignoreBuildErrors). فایل‌های تولیدی سرور dev (.next*) و پوشه‌های محیط محلی حذف شده‌اند تا نتیجهٔ tsc قطعی و تکرارپذیر باشد (چه محلی، چه داخل Docker builder). اجرا: npm run typecheck",
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    ".next",
+    ".next-prod",
+    "docker-sim",
+    "docker-data",
+    "skills",
+    "download",
+    "agent-ctx",
+    "tool-results",
+    "backups",
+    "upload"
+  ]
+}

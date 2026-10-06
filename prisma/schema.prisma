@@ -1,0 +1,1258 @@
+// ═══════════════════════════════════════════════════════════════
+// شهریار — اسکیمای دیتابیس
+// طراحی ماژولار با ایندکس‌گذاری کامل برای مقیاس‌پذیری
+// ═══════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// کاربران اپلیکیشن
+// ─────────────────────────────────────────────
+model User {
+  id                String    @id @default(cuid())
+  phone             String    @unique // فرمت: 09xxxxxxxxx
+  passwordHash      String? // رمز دومرحله‌ای — null یعنی فقط OTP (کاربر از تب امنیت فعال می‌کند)
+  fullName          String?
+  email             String?
+  avatarUrl         String?
+  avatarColor       String    @default("0")
+  city              String    @default("رفسنجان")
+  gender            String? // male | female
+  birthYear         Int?
+  birthDate         DateTime? // تاریخ کامل تولد (از ثبت‌نام با تقویم شمسی)
+  interests         String? // JSON آرایه علایق
+  bio               String?
+  role              String    @default("USER") // USER | ADMIN
+  status            String    @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
+  isVerified        Boolean   @default(false) // تیک آبی شهریار
+  verifiedAt        DateTime?
+  restrictedUntil   DateTime? // محدودیت موقت (بدون بلاک کامل)
+  restrictionReason String?
+  lastLoginAt       DateTime?
+  loginCount        Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  sessions            Session[]
+  chatSessions        ChatSession[]
+  memories            AIMemory[]
+  goals               Goal[]
+  reviews             BusinessReview[]
+  activityLogs        ActivityLog[]
+  favoriteBizs        FavoriteBusiness[]
+  financeAccounts     FinanceAccount[]
+  financeCategories   FinanceCategory[]
+  financeTransactions FinanceTransaction[]
+  financeBudgets      FinanceBudget[]
+  financeGoals        FinanceGoal[]
+  financeDebts        FinanceDebt[]
+  financeRecurrings   FinanceRecurring[]
+  notifications       NotificationRecipient[]
+
+  // ─── شبکه اجتماعی شهریار ───
+  socialProfile     SocialProfile?
+  knowledgeItems    KnowledgeItem[]
+  convsStarted      SocialConversation[] @relation("ConvUserA")
+  convsCounter      SocialConversation[] @relation("ConvUserB")
+  convsAgentOwner   SocialConversation[] @relation("ConvOwner")
+  socialMsgsSent    SocialMessage[]      @relation("SocialMsgSender")
+  profileViewsGiven ProfileViewLog[]     @relation("ProfileViewsGiven")
+  endorsementsGiven SkillEndorsement[]   @relation("EndorsementsGiven")
+
+  // ─── فید شهریار ───
+  socialPostsAuthored    SocialPost[]        @relation("SocialPostsAuthored")
+  socialPostLikesGiven   SocialPostLike[]    @relation("SocialPostLikesGiven")
+  socialPostCommentsMade SocialPostComment[] @relation("SocialPostCommentsAuthored")
+  socialPostReportsMade  SocialPostReport[]  @relation("SocialPostReportsMade")
+
+  // ─── انجمن‌های شهریار ───
+  forumsChaired     Forum[]        @relation("ForumChair")
+  forumMemberships  ForumMember[]  @relation("ForumMemberships")
+  forumMessages     ForumMessage[] @relation("ForumMessages")
+  forumEventsMade   ForumEvent[]   @relation("ForumEventsCreated")
+  forumArticlesMade ForumArticle[] @relation("ForumArticlesAuthored")
+
+  // ─── اقتصاد توکن ───
+  tokenWallet        TokenWallet?
+  paymentOrders      PaymentOrder[]
+  forumKnowledgeMade ForumKnowledge[] @relation("ForumKnowledgeAdded")
+  forumAgentThreads  ForumMessage[]   @relation("ForumAgentThreads") // تردهای خصوصی چت با ایجنت انجمن‌ها
+
+  // ─── لیدهای ایجنت (CRM) ───
+  agentLeadsReceived AgentLead[] @relation("AgentLeadsAsLead") // لیدهایی که خودم ایجاد کرده‌ام (با ایجنت دیگران چت کرده‌ام)
+  agentLeadsOwned    AgentLead[] @relation("AgentLeadsOwned") // لیدهای ایجنت شخصی خودم
+
+  @@index([status, createdAt])
+  @@index([phone])
+}
+
+// ─────────────────────────────────────────────
+// سشن‌های کاربر (مدیریت توکن JWT)
+// ─────────────────────────────────────────────
+model Session {
+  id         String    @id @default(cuid())
+  jti        String    @unique // شناسه یکتای توکن
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip         String?
+  userAgent  String?
+  device     String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────
+// مدیران سیستم (پنل /shah-ad)
+// ─────────────────────────────────────────────
+model AdminUser {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  name         String    @default("مدیر سیستم")
+  role         String    @default("SUPER_ADMIN") // SUPER_ADMIN | ADMIN | VIEWER
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  loginCount   Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions AdminSession[]
+}
+
+model AdminSession {
+  id        String    @id @default(cuid())
+  jti       String    @unique
+  adminId   String
+  admin     AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────
+// دسته‌بندی اصناف
+// ─────────────────────────────────────────────
+model BusinessCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  icon        String   @default("Store") // نام آیکون lucide
+  color       String   @default("#0e8a5a")
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  businesses Business[]
+
+  @@index([sortOrder])
+}
+
+// ─────────────────────────────────────────────
+// کسب‌وکارها (اصناف رفسنجان)
+// ─────────────────────────────────────────────
+model Business {
+  id           String           @id @default(cuid())
+  name         String
+  slug         String           @unique
+  description  String?
+  categoryId   String
+  category     BusinessCategory @relation(fields: [categoryId], references: [id])
+  ownerName    String?
+  phone        String?
+  phone2       String?
+  email        String?
+  address      String?
+  district     String? // محله
+  latitude     Float?
+  longitude    Float?
+  workingHours String? // JSON ساعات کاری
+  website      String?
+  instagram    String?
+  telegram     String?
+  whatsapp     String?
+  services     String? // JSON آرایه خدمات
+  keywords     String? // کلمات کلیدی برای جستجو
+  imageUrl     String?
+  gallery      String? // JSON آرایه گالری تصاویر [{url, name}]
+  rating       Float            @default(0)
+  reviewCount  Int              @default(0)
+  viewCount    Int              @default(0)
+  isVerified   Boolean          @default(false)
+  isFeatured   Boolean          @default(false) // آگهی ویژه
+  isActive     Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  reviews   BusinessReview[]
+  favorites FavoriteBusiness[]
+
+  @@index([categoryId, isActive])
+  @@index([isFeatured, rating])
+  @@index([name])
+}
+
+// ─────────────────────────────────────────────
+// نظرات کاربران روی اصناف — نسخه ۲ (چندمعیاره + تگ + رأی مفید)
+// ─────────────────────────────────────────────
+model BusinessReview {
+  id             String   @id @default(cuid())
+  businessId     String
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating         Int // 1 تا 5 — امتیاز کلی
+  quality        Int? // 1 تا 5 — کیفیت
+  priceFair      Int? // 1 تا 5 — قیمت مناسب
+  behavior       Int? // 1 تا 5 — برخورد
+  speed          Int? // 1 تا 5 — سرعت خدمات
+  pros           String? // JSON آرایه تگ‌های مثبت
+  cons           String? // JSON آرایه تگ‌های منفی
+  wouldRecommend Boolean  @default(true)
+  helpfulCount   Int      @default(0)
+  helpfulVoters  String? // JSON آرایه شناسه کاربران رأی‌داده
+  comment        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@unique([businessId, userId])
+  @@index([businessId, createdAt])
+  @@index([businessId, helpfulCount])
+}
+
+// ─────────────────────────────────────────────
+// علاقه‌مندی‌های کاربر به اصناف
+// ─────────────────────────────────────────────
+model FavoriteBusiness {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, businessId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────
+// گفتگوهای هوشیار
+// ─────────────────────────────────────────────
+model ChatSession {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String   @default("گفتگوی تازه")
+  mode         String   @default("chat") // chat | deep | search | image
+  messageCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  messages ChatMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model ChatMessage {
+  id             String      @id @default(cuid())
+  sessionId      String
+  session        ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role           String // user | assistant
+  content        String
+  thinking       String? // محتوای تفکر عمیق
+  searchUsed     Boolean     @default(false)
+  searchResults  String? // JSON نتایج جستجو
+  imageData      String? // تصویر تولیدی base64
+  imagePrompt    String?
+  attachmentUrl  String? // فایل پیوست کاربر (آپلودشده)
+  attachmentName String? // نام نمایشی فایل
+  attachmentMime String? // نوع فایل
+  generatedFiles Json? // فایل‌های تولیدی هوشیار: [{url,name,mime,size,kind}]
+  tokensUsed     Int         @default(0)
+  createdAt      DateTime    @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// حافظه داینامیک هوش مصنوعی
+// ─────────────────────────────────────────────
+model AIMemory {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key        String // کلید حافظه مثل «شغل»، «علاقه‌ها»
+  value      String // مقدار
+  category   String    @default("personal") // personal | preference | goal | health | family | other
+  importance Int       @default(5) // 1 تا 10
+  confidence Float     @default(0.8)
+  source     String    @default("auto") // auto | manual | chat
+  hitsCount  Int       @default(0)
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId, category, importance])
+}
+
+// ─────────────────────────────────────────────
+// اهداف و وظایف
+// ─────────────────────────────────────────────
+model Goal {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  category    String    @default("personal") // personal | health | career | education | financial | family
+  priority    String    @default("medium") // low | medium | high | critical
+  status      String    @default("active") // active | completed | archived
+  progress    Int       @default(0) // 0-100
+  color       String    @default("#0e8a5a")
+  deadline    DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tasks Task[]
+
+  @@index([userId, status])
+  @@index([userId, deadline])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  goalId      String
+  goal        Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      String    @default("todo") // todo | in_progress | done
+  sortOrder   Int       @default(0)
+  priority    String    @default("medium")
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([goalId, status, sortOrder])
+}
+
+// ─────────────────────────────────────────────
+// پایگاه دانش شهری (داده‌های روز شهر)
+// ─────────────────────────────────────────────
+model CityData {
+  id          String   @id @default(cuid())
+  category    String   @default("news") // news | event | announcement | service | tip
+  title       String
+  content     String
+  summary     String?
+  source      String?
+  imageUrl    String?
+  isPublished Boolean  @default(true)
+  isPinned    Boolean  @default(false)
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, isPublished, publishedAt])
+}
+
+// ─────────────────────────────────────────────
+// تنظیمات سیستم (Key-Value)
+// ─────────────────────────────────────────────
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String // JSON
+  group     String   @default("general") // general | ai | security | app
+  updatedAt DateTime @updatedAt
+
+  @@index([group])
+}
+
+// ─────────────────────────────────────────────
+// لاگ فعالیت‌های سیستم
+// ─────────────────────────────────────────────
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  adminId   String?
+  actorType String   @default("user") // user | admin | system
+  action    String // auth.login | business.create | ...
+  entity    String?
+  entityId  String?
+  details   String? // JSON
+  level     String   @default("info") // info | warning | error
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// کش استخراج محتوای اسناد — موتور خواندن فایل هوشیار
+// محتوای متنی استخراج‌شده از هر پیوست (PDF/Word/Excel/تصویر/...)
+// یک‌بار استخراج و برای پیگیری‌های بعدی گفتگو کش می‌شود.
+// ─────────────────────────────────────────────
+model DocumentExtraction {
+  id           String   @id @default(cuid())
+  mediaUrl     String   @unique // URL کانونی رسانه (/files/chat/...)
+  name         String // نام نمایشی فایل
+  mime         String // نوع MIME
+  sizeBytes    Int      @default(0)
+  content      String // متن استخراج‌شده (پس از بودجه‌بندی)
+  method       String // pdf-text | pdf-vision | image-vision | docx | xlsx | text | unsupported
+  fullLength   Int      @default(0) // طول کامل متن قبل از برش
+  wasTruncated Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ماژول مدیریت مالی شخصی — شهریار
+// حساب‌ها، تراکنش‌ها، دسته‌بندی‌ها، بودجه‌ها، اهداف مالی،
+// قرض‌ها و تراکنش‌های تکرارشونده — یکپارچه با مشاور AI
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────
+// حساب‌های مالی (نقدی، بانکی، کارتی، کیف پول)
+// ─────────────────────────────────────────────
+model FinanceAccount {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  type           String   @default("cash") // cash | bank | card | wallet
+  initialBalance Int      @default(0) // به تومان
+  color          String   @default("#0e8a5a")
+  icon           String   @default("wallet")
+  note           String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  transactions         FinanceTransaction[]
+  transferTransactions FinanceTransaction[] @relation("TransferTo")
+  recurrings           FinanceRecurring[]
+
+  @@index([userId, isActive])
+}
+
+// ─────────────────────────────────────────────
+// دسته‌بندی‌های مالی (پیش‌فرض سیستمی + سفارشی کاربر)
+// ─────────────────────────────────────────────
+model FinanceCategory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  type      String // income | expense
+  icon      String   @default("tag")
+  color     String   @default("#0e8a5a")
+  kind      String   @default("custom") // builtin | custom
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  transactions FinanceTransaction[]
+  budgets      FinanceBudget[]
+  recurrings   FinanceRecurring[]
+
+  @@index([userId, type])
+}
+
+// ─────────────────────────────────────────────
+// تراکنش‌ها (درآمد، هزینه، انتقال بین حساب‌ها)
+// ─────────────────────────────────────────────
+model FinanceTransaction {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      FinanceAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId   String?
+  category     FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  type         String // income | expense | transfer
+  amount       Int // مثبت — جهت را type تعیین می‌کند
+  date         DateTime         @default(now())
+  description  String?
+  transferToId String?
+  transferTo   FinanceAccount?  @relation("TransferTo", fields: [transferToId], references: [id], onDelete: SetNull)
+  source       String           @default("manual") // manual | ai | recurring | import
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([userId, date, type])
+  @@index([userId, categoryId])
+}
+
+// ─────────────────────────────────────────────
+// بودجه‌های ماهانه (به تفکیک دسته‌بندی — ماه جلالی)
+// ─────────────────────────────────────────────
+model FinanceBudget {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   FinanceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  monthKey   String // "1405-06" (جلالی)
+  amount     Int // سقف بودجه به تومان
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([userId, categoryId, monthKey])
+  @@index([userId, monthKey])
+}
+
+// ─────────────────────────────────────────────
+// اهداف مالی / پس‌انداز
+// ─────────────────────────────────────────────
+model FinanceGoal {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  targetAmount  Int
+  currentAmount Int       @default(0)
+  deadline      DateTime?
+  color         String    @default("#0e8a5a")
+  icon          String    @default("target")
+  note          String?
+  status        String    @default("active") // active | completed | cancelled
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────
+// قرض‌ها و وام‌ها (دوسویه: بدهی من / طلب من)
+// ─────────────────────────────────────────────
+model FinanceDebt {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction       String    @default("i_owe") // i_owe | owed_to_me
+  personName      String
+  amount          Int // مبلغ کل
+  remainingAmount Int
+  dueDate         DateTime?
+  description     String?
+  status          String    @default("open") // open | settled
+  settledAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────
+// تراکنش‌های تکرارشونده (اجاره، اشتراک، حقوق...)
+// ─────────────────────────────────────────────
+model FinanceRecurring {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  type        String           @default("expense") // income | expense
+  amount      Int
+  cadence     String           @default("monthly") // weekly | monthly | yearly
+  accountId   String
+  account     FinanceAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId  String?
+  category    FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  nextRunDate DateTime
+  isActive    Boolean          @default(true)
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId, isActive, nextRunDate])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ماژول شهریار — شبکه اجتماعی حرفه‌ای (لینکدین هوشمند رفسنجان)
+// پروفایل عمومی + دانش ایجنت شخصی + گفتگوی مستقیم و گفتگو با ایجنت
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────
+// پروفایل عمومی حرفه‌ای کاربر
+// ─────────────────────────────────────────────
+model SocialProfile {
+  id             String  @id @default(cuid())
+  userId         String  @unique
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  headline       String? // عنوان شغلی مثل «توسعه‌دهنده ارشد موبایل»
+  bio            String? // درباره‌ی حرفه‌ای من
+  city           String? // شهر/محله فعالیت
+  bannerUrl      String? // تصویر بنر پروفایل
+  bannerTheme    String  @default("aurora") // کلید تم گرادیانی بنر
+  skills         String? // JSON [{name, level}] — سطح ۱ تا ۴
+  interests      String? // JSON string[] — علایق حرفه‌ای
+  education      String? // JSON [{degree, field, school, startYear, endYear, note}]
+  experience     String? // JSON [{role, company, description, startYear, endYear, current}]
+  links          String? // JSON [{label, url}]
+  isDiscoverable Boolean @default(true) // دیده‌شدن در دایرکتوری شهریار
+  viewCount      Int     @default(0)
+
+  // ─── تنظیمات و شخصی‌سازی ایجنت شخصی ───
+  agentEnabled        Boolean @default(true) // ایجنت فعال است؟
+  agentName           String? // نام نمایشی ایجنت (پیش‌فرض: ایجنتِ {نام کوچک})
+  agentGreeting       String? // پیام خوش‌آمدگویی ایجنت در شروع گفتگو
+  agentStyle          String  @default("professional") // professional|friendly|marketing|technical|creative
+  agentInstructions   String? // دستورالعمل اختصاصی مالک (چه چیزهایی تأکید/چگونه پاسخ دهد)
+  agentForbidden      String? // موضوعات ممنوعه — ایجنت هرگز درباره‌شان صحبت نمی‌کند
+  agentUseProfile     Boolean @default(true) // استفاده از پروفایل عمومی در پاسخ‌ها
+  agentSuggestHandoff Boolean @default(true) // دعوت به گفتگوی مستقیم در فرصت مناسب
+  agentQuestions      String? // JSON string[] — سؤال‌های پیشنهادی شروع گفتگو (حداکثر ۴)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  viewLogs     ProfileViewLog[]
+  endorsements SkillEndorsement[]
+
+  @@index([isDiscoverable, updatedAt])
+}
+
+// ─────────────────────────────────────────────
+// دانش ایجنت — منابعی که ایجنت شخصی کاربر از آن‌ها تغذیه می‌شود
+// (متن خام یا فایل متنی که سمت کلاینت استخراج شده)
+// ─────────────────────────────────────────────
+model KnowledgeItem {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  sourceType String   @default("text") // text | file
+  content    String // متن دانش
+  fileName   String? // نام فایل مبدأ (اگر file)
+  charCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+// ─────────────────────────────────────────────
+// گفتگوهای اجتماعی — DM کاربر↔کاربر یا کاربر↔ایجنت دیگری
+// key یکتا: dm:{idA}:{idB} (مرتب) | agent:{chattingUserId}:{agentOwnerId}
+// ─────────────────────────────────────────────
+model SocialConversation {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  type         String   @default("dm") // dm | agent
+  userAId      String // آغازگر گفتگو (در agent: کاربری که با ایجنت چت می‌کند)
+  userA        User     @relation("ConvUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId      String? // طرف مقابل در DM
+  userB        User?    @relation("ConvUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  ownerId      String? // صاحب ایجنت در گفتگوی ایجنت
+  owner        User?    @relation("ConvOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  messageCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  messages SocialMessage[]
+
+  @@index([userAId, updatedAt])
+  @@index([userBId, updatedAt])
+  @@index([ownerId, updatedAt])
+}
+
+model SocialMessage {
+  id             String             @id @default(cuid())
+  conversationId String
+  conversation   SocialConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String? // null = پیام ایجنت
+  sender         User?              @relation("SocialMsgSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderType     String             @default("user") // user | agent
+  content        String
+  createdAt      DateTime           @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// بازدید پروفایل‌ها — چه کسی پروفایل من را دیده
+// ─────────────────────────────────────────────
+model ProfileViewLog {
+  id        String        @id @default(cuid())
+  profileId String
+  profile   SocialProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  viewerId  String
+  viewer    User          @relation("ProfileViewsGiven", fields: [viewerId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([profileId, viewerId])
+  @@index([profileId, updatedAt])
+}
+
+// ─────────────────────────────────────────────
+// تأیید مهارت‌ها (مثل LinkedIn) — هر کاربر هر مهارت را یک‌بار تأیید می‌کند
+// ─────────────────────────────────────────────
+model SkillEndorsement {
+  id         String        @id @default(cuid())
+  profileId  String
+  profile    SocialProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  endorserId String
+  endorser   User          @relation("EndorsementsGiven", fields: [endorserId], references: [id], onDelete: Cascade)
+  skill      String
+  createdAt  DateTime      @default(now())
+
+  @@unique([profileId, endorserId, skill])
+  @@index([profileId, skill])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ماژول CMS — مدیریت حرفه‌ای ماژول‌ها و محتوای اپ از پنل ادمین
+// رجیستری ماژول‌ها (فعال/غیرفعال + کانفیگ JSON) و دسته‌بندی‌های
+// قابل‌مدیریت برای اهداف و قالب‌های دسته‌بندی مالی
+// ═══════════════════════════════════════════════════════════════
+
+model ModuleConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique // home | chat | goals | finance | businesses | profile
+  name        String // نام نمایشی فارسی
+  description String? // توضیح کوتاه برای پنل ادمین
+  icon        String   @default("Sparkles") // نام آیکن lucide
+  group       String   @default("main") // برای گروه‌بندی در ادمین
+  isEnabled   Boolean  @default(true)
+  isCore      Boolean  @default(false) // ماژول هسته — غیرقابل غیرفعال‌سازی
+  config      String   @default("{}") // JSON کانفیگ اختصاصی ماژول
+  sortOrder   Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@index([isEnabled])
+  @@map("module_configs")
+}
+
+// ─────────────────────────────────────────────
+// دسته‌بندی‌های اهداف — قابل مدیریت از پنل ادمین
+// ─────────────────────────────────────────────
+model GoalCategory {
+  id        String   @id @default(cuid())
+  key       String   @unique // کلید ذخیره‌شده در Goal.category
+  name      String // نام نمایشی فارسی
+  icon      String   @default("target") // نام آیکن lucide
+  color     String   @default("#0e8a5a")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("goal_categories")
+}
+
+// ─────────────────────────────────────────────
+// قالب‌های دسته‌بندی مالی سیستمی — سید برای کاربران جدید
+// ─────────────────────────────────────────────
+model FinanceCategoryTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  type      String // income | expense
+  icon      String   @default("tag")
+  color     String   @default("#7f8c8d")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, isActive, sortOrder])
+  @@map("finance_category_templates")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// اعلان‌های شهریار — کمپین‌های مدیریت با فیلتر مخاطب و ردیابی خوانده‌شدن
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────
+// اعلان/کمپین — ساخته‌شده توسط مدیر، تحویل به‌روی-درخواست
+// ─────────────────────────────────────────────
+model Notification {
+  id          String    @id @default(cuid())
+  title       String
+  body        String
+  type        String    @default("info") // info | success | warning | celebration | marketing
+  ctaLabel    String? // متن دکمهٔ اقدام
+  ctaView     String? // ویوی هدف در اپ (home | chat | goals | ...)
+  audience    String    @default("all") // all | filtered
+  filters     String? // JSON { gender, city, interest, activity, hasAgent }
+  isActive    Boolean   @default(true)
+  scheduledAt DateTime? // ارسال از این زمان
+  expiresAt   DateTime? // انقضا
+  createdBy   String? // شناسهٔ مدیر
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  recipients NotificationRecipient[]
+
+  @@index([isActive, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// کدهای یکبارمصرف ورود/ثبت‌نام (OTP)
+// ─────────────────────────────────────────────
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String // 09xxxxxxxxx
+  codeHash  String // هش scrypt کد ۶ رقمی
+  purpose   String // LOGIN | REGISTER
+  attempts  Int      @default(0) // تلاش‌های ناموفق (حداکثر ۵)
+  consumed  Boolean  @default(false)
+  ip        String?
+  expiresAt DateTime // ۳ دقیقه
+  createdAt DateTime @default(now())
+
+  @@index([phone, purpose, createdAt])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────
+// تنظیمات پنل پیامک (ملی‌پیامک) — یکتا
+// ─────────────────────────────────────────────
+model SmsSetting {
+  id          String    @id @default("main")
+  provider    String    @default("melipayamak")
+  username    String? // نام کاربری پنل
+  passwordEnc String? // رمز عبور — رمزنگاری‌شده AES-256-GCM
+  fromNumber  String? // خط ارسال — الزامی در روش دستی (SendSMS)
+  patternCode String? // کد الگوی OTP (bodyId) — خالی = ارسال دستی
+  patternVars String? // متغیرهای ثابت اضافی الگو — هر خط یک مقدار
+  otpTemplate String? // متن پیامک دستی — {code} با کد تایید جایگزین می‌شود
+  enabled     Boolean   @default(false)
+  lastTestAt  DateTime?
+  lastTestOk  Boolean?
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// تحویل هر کاربر — چه اعلانی دیده/خوانده شده
+// ─────────────────────────────────────────────
+model NotificationRecipient {
+  id             String       @id @default(cuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([notificationId, userId])
+  @@index([userId, createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════
+// انجمن‌های شهریار — انجمن‌های عمومی/خصوصی با تالار گفتمان،
+// ایجنت انجمن، تقویم رویدادها، اعضا و نشریه
+// ایجاد انجمن فقط از پنل مدیریت (CMS) — رئیس انجمن توسط مدیر تعیین می‌شود
+// ═══════════════════════════════════════════════════════════
+
+model Forum {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  title       String
+  description String?
+  coverImage  String?
+  type        String  @default("PUBLIC") // PUBLIC (عمومی) | PRIVATE (خصوصی)
+  status      String  @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  chairId     String // رئیس انجمن — توسط مدیر سیستم تعیین می‌شود
+  chair       User    @relation("ForumChair", fields: [chairId], references: [id], onDelete: Cascade)
+
+  // ─── تنظیمات ایجنت انجمن ───
+  agentEnabled      Boolean @default(true)
+  agentName         String? // نام نمایشی (پیش‌فرض: ایجنت {عنوان انجمن})
+  agentGreeting     String? // پیام خوش‌آمدگویی در گفتگوی خصوصی
+  agentInstructions String? // دستورالعمل اختصاصی رئیس انجمن
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   ForumMember[]
+  messages  ForumMessage[]
+  events    ForumEvent[]
+  articles  ForumArticle[]
+  knowledge ForumKnowledge[]
+  leads     AgentLead[]      @relation("AgentLeadsOfForum")
+
+  @@index([status, type])
+  @@index([chairId])
+  @@map("forums")
+}
+
+// ─── عضویت انجمن — نقش و وضعیت هر کاربر در هر انجمن ───
+model ForumMember {
+  id          String    @id @default(cuid())
+  forumId     String
+  forum       Forum     @relation(fields: [forumId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation("ForumMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  role        String    @default("MEMBER") // CHAIR (رئیس) | MEMBER (عضو)
+  status      String    @default("PENDING") // ACTIVE | PENDING | REJECTED | BANNED
+  requestNote String? // پیام درخواست عضویت
+  joinedAt    DateTime  @default(now())
+  reviewedAt  DateTime? // زمان بررسی درخواست توسط رئیس
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([forumId, userId])
+  @@index([forumId, status])
+  @@index([userId])
+  @@map("forum_members")
+}
+
+// ─── پیام‌های انجمن — تالار گفتمان گروهی و گفتگوی خصوصی با ایجنت ───
+model ForumMessage {
+  id           String   @id @default(cuid())
+  forumId      String
+  forum        Forum    @relation(fields: [forumId], references: [id], onDelete: Cascade)
+  thread       String   @default("FORUM") // FORUM (تالار گفتمان) | AGENT (گفتگو با ایجنت)
+  // در رشته‌ی AGENT: صاحب گفتگوی خصوصی (هر کاربر ترد اختصاصی خودش را دارد)
+  threadUserId String?
+  threadUser   User?    @relation("ForumAgentThreads", fields: [threadUserId], references: [id], onDelete: Cascade)
+  senderId     String? // null = ایجنت انجمن
+  sender       User?    @relation("ForumMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  isFromAgent  Boolean  @default(false)
+  content      String
+  createdAt    DateTime @default(now())
+
+  @@index([forumId, thread, createdAt])
+  @@index([forumId, thread, threadUserId, createdAt])
+  @@map("forum_messages")
+}
+
+// ─────────────────────────────────────────────
+// لیدهای ایجنت — CRM حرفه‌ای برای مالکان ایجنت
+// هر کاربری که با یک ایجنت (شخصی یا انجمن) گفتگو کند، به‌عنوان لید
+// برای مالک آن ایجنت ثبت می‌شود: وضعیت گردش کار + یادداشت + آمار تماس
+// ownerKey یکتایی لید است: "user:{ownerId}" یا "forum:{forumId}"
+// ─────────────────────────────────────────────
+model AgentLead {
+  id             String   @id @default(cuid())
+  scope          String   @default("user") // user (ایجنت شخصی) | forum (ایجنت انجمن)
+  ownerKey       String // "user:{userId}" | "forum:{forumId}"
+  userId         String // کاربر لید — کسی که با ایجنت گفتگو کرده
+  user           User     @relation("AgentLeadsAsLead", fields: [userId], references: [id], onDelete: Cascade)
+  ownerUserId    String? // scope=user: صاحب ایجنت شخصی
+  ownerUser      User?    @relation("AgentLeadsOwned", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  forumId        String? // scope=forum: انجمن صاحب ایجنت
+  forum          Forum?   @relation("AgentLeadsOfForum", fields: [forumId], references: [id], onDelete: Cascade)
+  status         String   @default("NEW") // NEW | CONTACTED | CONVERTED | ARCHIVED
+  note           String? // یادداشت خصوصی مالک ایجنت درباره لید
+  messageCount   Int      @default(0) // کل پیام‌های ردوبدل‌شده (حتی پس از بازنشانی حفظ می‌شود)
+  firstMessageAt DateTime @default(now())
+  lastMessageAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([ownerKey, userId])
+  @@index([ownerKey, status, lastMessageAt])
+  @@map("agent_leads")
+}
+
+// ─── رویدادهای انجمن — تقویم رویدادها ───
+model ForumEvent {
+  id          String    @id @default(cuid())
+  forumId     String
+  forum       Forum     @relation(fields: [forumId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  location    String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  createdById String
+  createdBy   User      @relation("ForumEventsCreated", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([forumId, startsAt])
+  @@map("forum_events")
+}
+
+// ─── نشریه انجمن — مقالات مارک‌داون با پیش‌نویس/انتشار ───
+model ForumArticle {
+  id          String    @id @default(cuid())
+  forumId     String
+  forum       Forum     @relation(fields: [forumId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation("ForumArticlesAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  title       String
+  summary     String?
+  content     String // مارک‌داون
+  coverImage  String?
+  status      String    @default("DRAFT") // DRAFT | PUBLISHED
+  views       Int       @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([forumId, status, publishedAt])
+  @@map("forum_articles")
+}
+
+// ─── دانش ایجنت انجمن — منابعی که رئیس بارگذاری می‌کند ───
+model ForumKnowledge {
+  id          String   @id @default(cuid())
+  forumId     String
+  forum       Forum    @relation(fields: [forumId], references: [id], onDelete: Cascade)
+  title       String
+  content     String
+  createdById String
+  createdBy   User     @relation("ForumKnowledgeAdded", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([forumId, updatedAt])
+  @@map("forum_knowledge")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// فید شهریار — پست‌های حرفه‌ای شبکه اجتماعی (مشابه توییتر با
+// کاربرد لینکدین): متن + پیوست‌های چندرسانه‌ای، لایک، کامنت،
+// پین، گزارش تخلف — با شمارنده‌های denormalized برای مقیاس‌پذیری
+// ═══════════════════════════════════════════════════════════════
+
+// ─── پست فید ───
+model SocialPost {
+  id           String    @id @default(cuid())
+  authorId     String
+  author       User      @relation("SocialPostsAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  content      String // متن پست — حداکثر ۵۰۰۰ کاراکتر (در API اعمال می‌شود)
+  isPinned     Boolean   @default(false) // پین‌شده توسط نویسنده در پروفایل خودش
+  pinnedAt     DateTime?
+  likeCount    Int       @default(0) // شمارنده denormalized (تراکنشی sync می‌شود)
+  commentCount Int       @default(0)
+  editedAt     DateTime? // null یعنی هرگز ویرایش نشده
+  deletedAt    DateTime? // soft-delete: از فید حذف ولی برای مدیر قابل بازیابی
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  attachments SocialPostAttachment[]
+  likes       SocialPostLike[]
+  comments    SocialPostComment[]
+  reports     SocialPostReport[]
+
+  // فید عمومی: پست‌های زنده به‌ترتیب جدیدترین
+  @@index([deletedAt, createdAt])
+  // پست‌های پروفایل: پین‌شده‌ها بالا سپس جدیدترین
+  @@index([authorId, deletedAt, isPinned, createdAt])
+  // گزارش‌های باز برای پنل مدیریت
+  @@index([deletedAt, likeCount])
+  @@map("social_posts")
+}
+
+// ─── پیوست پست — تصویر / ویدیو / صوت / فایل ───
+model SocialPostAttachment {
+  id           String     @id @default(cuid())
+  postId       String
+  post         SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  kind         String // image | video | audio | file
+  url          String // آدرس داخلی سیستم آپلود (در API اعتبارسنجی می‌شود)
+  originalName String // نام اصلی فایل برای نمایش/دانلود
+  mime         String
+  size         Int // بایت
+  durationMs   Int? // مدت ویدیو/صوت — از کلاینت هنگام ساخت
+  width        Int? // ابعاد تصویر/ویدیو — برای layout بدون پرش (CLS)
+  height       Int?
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  @@index([postId, sortOrder])
+  @@map("social_post_attachments")
+}
+
+// ─── لایک پست — هر کاربر هر پست یک‌بار ───
+model SocialPostLike {
+  id        String     @id @default(cuid())
+  postId    String
+  post      SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation("SocialPostLikesGiven", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+  @@map("social_post_likes")
+}
+
+// ─── کامنت پست ───
+model SocialPostComment {
+  id        String     @id @default(cuid())
+  postId    String
+  post      SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User       @relation("SocialPostCommentsAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  content   String // حداکثر ۱۰۰۰ کاراکتر
+  deletedAt DateTime? // soft-delete
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([postId, createdAt])
+  @@map("social_post_comments")
+}
+
+// ─── گزارش تخلف پست — برای پنل مدیریت ───
+model SocialPostReport {
+  id             String     @id @default(cuid())
+  postId         String
+  post           SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporterId     String
+  reporter       User       @relation("SocialPostReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  reason         String // spam | abusive | inappropriate | misinformation | privacy | other
+  note           String? // توضیح اختیاری گزارش‌دهنده
+  status         String     @default("open") // open | resolved | dismissed
+  resolvedById   String? // مدیر تصمیم‌گیرنده
+  resolvedAt     DateTime?
+  resolutionNote String?
+  createdAt      DateTime   @default(now())
+
+  @@unique([postId, reporterId])
+  @@index([status, createdAt])
+  @@map("social_post_reports")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// اقتصاد توکن شهریار — کیف پول، تراکنش، بسته‌ها و درگاه پرداخت
+// ═══════════════════════════════════════════════════════════════
+
+/// کیف پول توکن هر کاربر — یکتا؛ موجودی فقط از طریق تراکنش‌ها تغییر می‌کند
+model TokenWallet {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  balance           Int       @default(0) // موجودی فعلی توکن
+  lifetimeGranted   Int       @default(0) // مجموع توکن‌های هدیه‌شده (ثبت‌نام/روزانه/مدیریتی)
+  lifetimePurchased Int       @default(0) // مجموع توکن‌های خریداری‌شده
+  lifetimeSpent     Int       @default(0) // مجموع توکن‌های مصرف‌شده
+  lastDailyBonusAt  DateTime? // آخرین زمان دریافت پاداش روزانه
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions TokenTransaction[]
+
+  @@map("token_wallets")
+}
+
+/// دفتر تراکنش توکن — هر تغییر موجودی یک رکورد تغییرناپذیر
+model TokenTransaction {
+  id       String      @id @default(cuid())
+  walletId String
+  wallet   TokenWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  userId   String // غیرنرمال برای کوئری سریع
+
+  type         String // signup_bonus | daily_bonus | purchase | spend | refund | admin_grant | admin_deduct
+  amount       Int // علامت‌دار: مثبت = افزایش، منفی = کاهش
+  balanceAfter Int // موجودی پس از تراکنش
+  feature      String? // chat | deep_think | web_search | image_gen | finance_advisor | goal_ai | forum_agent | social_agent | document_read | file_gen
+  refId        String? // شناسه مرجع (سفارش پرداخت، پیام و...)
+  note         String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([feature])
+  @@map("token_transactions")
+}
+
+/// ثبت مصرف دقیق توکن — یک رکورد به ازای هر فراخوانی هوش مصنوعی
+/// (مشابه صورتحساب API: توکن ورودی + خروجی + متادیتای کامل)
+model TokenUsage {
+  id     String @id @default(cuid())
+  userId String
+
+  feature      String // chat | deep_think | web_search | image_gen | finance_advisor | goal_ai | forum_agent | social_agent | document_read | file_gen
+  section      String // hoshyar | social | forums | goals | finance — بخش شهریار
+  inputTokens  Int    @default(0) // توکن ورودی (پرامپت)
+  outputTokens Int    @default(0) // توکن خروجی (پاسخ)
+  totalTokens  Int    @default(0) // مجموع قابل پرداخت (برای تصویر = هزینه ثابت)
+  chargedTokens Int   @default(0) // مقدار واقعی کسرشده از کیف (کف: صفر)
+  estimated    Boolean @default(false) // true = برآوردی (سرویس usage گزارش نداد)
+
+  model  String? // نام مدل در صورت دسترس
+  title  String? // عنوان کوتاه (جلسه گفتگو، نام ایجنت، عنوان هدف...)
+  refId  String? // شناسه مرجع (پیام، جلسه، هدف...)
+  meta   String? // JSON متادیتای کامل (حالت، جستجو، پیوست، فایل‌ها...)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, feature])
+  @@index([section, createdAt])
+  @@index([feature, createdAt])
+  @@map("token_usages")
+}
+
+/// بسته توکن قابل خرید — قابل مدیریت از پنل مدیریت
+model TokenPackage {
+  id          String   @id @default(cuid())
+  title       String // مثل «بسته ویژه»
+  description String?
+  tokens      Int // توکن اصلی
+  bonusTokens Int      @default(0) // توکن هدیه
+  priceToman  Int // قیمت به تومان
+  popular     Boolean  @default(false) // نشان «پیشنهاد ویژه»
+  active      Boolean  @default(true) // قابل خرید
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders PaymentOrder[]
+
+  @@index([active, sortOrder])
+  @@map("token_packages")
+}
+
+/// سفارش پرداخت — چرخه کامل خرید توکن از درگاه زرین‌پال
+model PaymentOrder {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageId String?
+  package   TokenPackage? @relation(fields: [packageId], references: [id])
+
+  packageTitle String // اسنپ‌شات عنوان بسته در لحظه خرید
+  tokens       Int // مجموع توکن اعتبارگیری‌شده (اصلی + هدیه)
+  bonusTokens  Int    @default(0)
+  priceToman   Int
+
+  status    String    @default("pending") // pending | paid | failed | canceled
+  gateway   String    @default("zarinpal")
+  authority String?   @unique // شناسه تراکنش زرین‌پال
+  refId     String? // کد رهگیری پرداخت موفق
+  cardPan   String? // چهار رقم آخر کارت
+  paidAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("payment_orders")
+}

@@ -1,0 +1,118 @@
+# ═══════════════════════════════════════════════════════════════
+# شهریار — docker-compose.yml
+# ═══════════════════════════════════════════════════════════════
+# معماری استقرار روی سرور DirectAdmin (پورت‌های 80/443 اشغال‌اند):
+#
+#   اینترنت ──80/443──► Apache/nginx خودِ DirectAdmin (SSL终结)
+#                          │  reverse-proxy (پیکربندی در پنل DA)
+#                          ▼
+#                    127.0.0.1:${APP_PORT:-3100}
+#                          │
+#                   ┌──────┴──────┐
+#                   │  container  │  shahryar-app (restart: unless-stopped)
+#                   │  Next.js    │  runner image — بدون هیچ داده‌ی امنیتی
+#                   └──────┬──────┘
+#                          │ /app/data  (همه‌ی داده‌های ماندگار)
+#                          ▼
+#                  ./docker-data/  ← Volume میزبان (bind mount)
+#                     ├── custom.db     دیتابیس SQLite
+#                     ├── schema.sql    خودشفایی اسکیما
+#                     ├── media/        رسانه‌های آپلودی کاربران
+#                     └── backups/      اسنپ‌شات‌های VACUUM INTO
+#
+# ⚠️ قواعد طلایی:
+#   • برای توقف: `docker compose down`  (بدون -v !)
+#   • «docker compose down -v» volume را پاک می‌کند — ممنوع!
+#   • به‌روزرسانی: `bash docker/deploy.sh` (دیتا دست‌نخورده می‌ماند)
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ─── سرویس اصلی اپ ───
+  app:
+    build:
+      context: .
+      target: runner
+    image: shahryar-app:latest
+    container_name: shahryar-app
+    restart: unless-stopped
+    init: true # tini به‌عنوان PID 1 → مدیریت صحیح سیگنال‌ها و زامبی‌ها
+    stop_grace_period: 20s
+    # فرزندان کانتینر هرگز نتوانند سطح دسترسی بالاتر بگیرند
+    security_opt:
+      - no-new-privileges:true
+    # چرخش لاگ — بدون این، json-file می‌تواند در بلندمدت دیسک VPS
+    # را پر کند (لاگ‌های لاگین/AI/آپلود به‌مرور رشد می‌کنند)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      # فقط loopback → از اینترنت مستقیم قابل‌دسترسی نیست؛
+      # DirectAdmin به همین پورت پراکسی می‌کند. برای دسترسی مستقیم:
+      # APP_BIND=0.0.0.0 در .env.docker
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3100}:3000"
+    env_file:
+      - .env.docker # رازها فقط در زمان اجرا (JWT_SECRET و...) — هرگز در ایمیج
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/custom.db
+      MEDIA_DIR: /app/data/media
+      TZ: ${TZ:-Asia/Tehran}
+    volumes:
+      # همه‌ی داده‌های ماندگار — بین دیپلوی‌ها حفظ می‌شود
+      - ./docker-data:/app/data
+      # اسرار runtime (اختیاری): secrets/z-ai-config → هوشیار AI
+      # فقط اگر فایل وجود داشته باشد، توسط entrypoint بارگذاری می‌شود
+      - ./secrets:/run/secrets-shahryar:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # /api/health = پروب عمومی مخصوص مانیتورینگ (بدون احراز هویت؛
+      # /api/diag از ممیزی امنیتی به بعد فقط با نشست مدیر پاسخ می‌دهد)
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>r.json()).then(j=>process.exit(j&&j.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  # ─── مهاجرت اسکیما (هر دیپلوی یک‌بار؛ سپس exit) ───
+  # تغییرات افزایشی خودکار اعمال می‌شوند؛ تغییرات مخرب متوقف
+  # می‌شوند (محافظ داده) — جزئیات در DOCKER-DEPLOY.md
+  migrate:
+    build:
+      context: .
+      target: migrator
+    image: shahryar-migrate:latest
+    restart: "no"
+    environment:
+      DATABASE_URL: file:/app/data/custom.db
+    volumes:
+      - ./docker-data:/app/data
+
+  # ─── Seed اولیه (فقط نصب تازه؛ اجرای دستی) ───
+  #   docker compose --profile tools run --rm seed
+  seed:
+    build:
+      context: .
+      target: migrator
+    image: shahryar-migrate:latest
+    restart: "no"
+    profiles: ["tools"]
+    command: ["seed"]
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: file:/app/data/custom.db
+    volumes:
+      - ./docker-data:/app/data
+
+# توجه: docker-data و secrets به‌صورت bind-mount روی میزبان‌اند و
+# در .gitignore هم آمده‌اند — نه commit می‌شوند، نه وارد ایمیج.

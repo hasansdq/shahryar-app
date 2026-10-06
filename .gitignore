@@ -1,24 +1,99 @@
-# Logs
-logs
-*.log
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.next-prod/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+.pnpm-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+!.env.docker.example
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# vercel
+.vercel
+
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+# ⚠️ الگوهای sandbox فقط در ریشه (بدون / هر مسیری در پروژه را می‌بلعند)
+/local-*
+.claude
+.z-ai-config
+*.log
+dev.log
+dev.out.log
+# ⚠️ فقط ریشه — الگوی خالی «test» قبلاً src/app/api/admin/sms/test/ را هم
+# بی‌صدا ignore می‌کرد؛ فایل هرگز کامیت نشد و ری‌ست سندباکس آن را پاک کرد (باگ 404 تست اتصال)
+/test/
+/prompt/
+
+server.log
+
+# ─── artifacts محیط/سندباکس و داده‌های runtime (هرگز commit نمی‌شوند) ───
+/skills/
+/.zscripts/
+/tool-results/
+/download/
+/storage/
+/cookies.txt
+/mini-services/
+/upload/
+
+# دیتابیس SQLite (داده runtime کاربران) — فقط db/schema.sql پیگیری می‌شود
+/db/*.db
+# ⚠️ استثنا: بکاپ ماندگاری — تنها راه نجات داده‌ها از ری‌ست سندباکس
+# (فایل‌های git-tracked تنها چیزهایی هستند که از ری‌ست جان سالم به در می‌برند)
+!/db/backup.db
+/db/*.db-journal
+/db/*.db-wal
+/db/*.db-shm
+
+# ─── Docker: داده‌های ماندگار و اسرار سرور (هرگز commit نمی‌شوند) ───
+/docker-data/
+/backups/
+/secrets/
+.env.docker
+
+# ─── artifacts تست (هرگز commit نمی‌شوند — با اجرای مجدد تست‌ها بازتولید می‌شوند) ───
+/scripts/**/*.png
+/scripts/**/*.jpg
+/scripts/**/*.jpeg
+/scripts/**/*.webp
+/scripts/**/*.pdf
+/scripts/t52-out/
+/scripts/t40-img/
+# داده ورودی seed قدیمی t40 (تصاویرش حذف شدند؛ seed قبلاً اعمال شده)
+docker-sim/
+
+# Server secrets and user data must never be published
+/db/*
+!/db/schema.sql
+/public/uploads/
